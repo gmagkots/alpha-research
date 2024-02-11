@@ -25,9 +25,9 @@ def summary_statistics():
     tickers_json = 'tickers_spread_mkt_cap'
     signals_file = 'stock_signals_spread_mkt_cap'
     print('Estimating summary statistics')
-    # with open(os.path.join(OUT_DIR, '{}.json'.format(tickers_json)), 'r') as f:
+    # with open(os.path.join(DATA_DIR, '{}.json'.format(tickers_json)), 'r') as f:
     #     tickers = json.load(f)
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_accounting_ratios.parquet'),
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_accounting_ratios.parquet'),
     #                      filters=[('ticker', 'in', tickers)])
     # scols = [col for col in df.columns if col[0:3] in ['bps', 'eps', 'sal', 'roa', 'roe', 'roi']]
     df = pd.read_parquet(os.path.join(OUT_DIR, '{}.parquet'.format(signals_file)))
@@ -70,8 +70,8 @@ def characteristics_portfolios():
 
     # read the stock returns and signals
     filename = os.path.join(OUT_DIR, 'stock_signals_554_rank_int.parquet')
-    # filename = os.path.join(OUT_DIR, 'stock_signals_spread_mkt_cap.parquet')
-    # filename = os.path.join(OUT_DIR, 'stock_orthogonal_signals.parquet')
+    # filename = os.path.join(DATA_DIR, 'stock_signals_spread_mkt_cap.parquet')
+    # filename = os.path.join(DATA_DIR, 'stock_orthogonal_signals.parquet')
     print('Reading and transforming the stock signal data from \n{}'.format(os.path.abspath(filename)))
     df = pd.read_parquet(filename)
     scols = [col for col in df.columns if col.startswith('sg_')]
@@ -101,7 +101,7 @@ def signal_performance():
     print('Evaluating the performance of signals')
 
     # read the HML portfolio returns and drop the portfolios without non-null values
-    # hml = pd.read_parquet(os.path.join(OUT_DIR, 'hml_returns.parquet'),
+    # hml = pd.read_parquet(os.path.join(DATA_DIR, 'hml_returns.parquet'),
     #                       filters=[('date', '>=', pd.to_datetime('2005-1-1'))])
     hml = pd.read_parquet(os.path.join(OUT_DIR, 'hml_returns.parquet'))
     bad_hmls = hml.columns[hml.isnull().all(axis=0)].tolist()
@@ -161,10 +161,10 @@ def cross_sectional_regressions(type='expected returns', scols=None):
     idcols = ['ticker', 'database', 'date', 'return']
 
     # read the stock return and signal score data
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_signals_spread_mkt_cap.parquet'), columns=idcols + scols)
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_signals_spread_mkt_cap.parquet'), columns=idcols + scols)
     df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_signals_554_rank_int.parquet'), columns=idcols + scols)
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_signals_largest_500.parquet'))
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_orthogonal_signals.parquet'), columns=idcols + scols)
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_signals_largest_500.parquet'))
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_orthogonal_signals.parquet'), columns=idcols + scols)
     if scols is None:
         scols = [col for col in df.columns if col.startswith('sg_')]
 
@@ -210,9 +210,9 @@ def main():
     # # cross_sectional_regressions(type='expected returns')
     # cross_sectional_regressions(type='orthogonalization')
 
-    # with open(os.path.join(OUT_DIR, 'tickers_554.json'), 'r') as f:
+    # with open(os.path.join(DATA_DIR, 'tickers_554.json'), 'r') as f:
     #     tickers = json.load(f)
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_fundamentals.parquet'),
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_fundamentals.parquet'),
     #                      filters=[('ticker', 'in', tickers)])
 
     idcols = ['ticker', 'database', 'date', 'return']

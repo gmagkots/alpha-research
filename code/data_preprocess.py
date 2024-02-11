@@ -152,8 +152,8 @@ def filter_raw_prices():
         # # save the output prices and returns
         # rcols = ['ticker', 'date', 'return']
         # print('Saving daily prices and returns for database {}'.format(base))
-        # df.to_parquet(os.path.join(OUT_DIR, '{}_daily_prices_usd.parquet'.format(base)))
-        # dfr[rcols].to_parquet(os.path.join(OUT_DIR, '{}_daily_returns.parquet'.format(base)))
+        # df.to_parquet(os.path.join(DATA_DIR, '{}_daily_prices_usd.parquet'.format(base)))
+        # dfr[rcols].to_parquet(os.path.join(DATA_DIR, '{}_daily_returns.parquet'.format(base)))
 
     # save the concatenated returns
     print('Saving the concatenated daily price and return files')
@@ -405,7 +405,7 @@ def filter_industries():
     sics = df['sic'].value_counts().head(30).index.tolist() + [3711, 3663, 5331, 5961]
     # sics = [sic for sic in sics if sic not in [2836, 5812, 3845, 3559]]
     df = df[df['sic'].isin(sics)]
-    # df['sic'].value_counts().to_csv(os.path.join(OUT_DIR, 'temp.csv'))
+    # df['sic'].value_counts().to_csv(os.path.join(DATA_DIR, 'temp.csv'))
 
     # sample randomly up to nmax tickers per SIC to further reduce
     # the sample and restore manually certain key tickers
@@ -425,7 +425,7 @@ def stock_market_cap():
     Downloads and saves the most recent values of market cap for a list of tickers.
     """
     # # read the fundamentals file to extract the full sample of eligible tickers
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_fundamentals.parquet'))
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_fundamentals.parquet'))
     # tickers = df['ticker'].unique()
     # print('Total number of stocks:', len(tickers))
     #
@@ -441,7 +441,7 @@ def stock_market_cap():
     #         print('No market cap for', ticker)
     #
     # # save the tickers and market cap (in local currency) for post-processing
-    # with open(os.path.join(OUT_DIR, 'backup', 'tickers_market_cap_local.json'), 'w') as f:
+    # with open(os.path.join(DATA_DIR, 'backup', 'tickers_market_cap_local.json'), 'w') as f:
     #     json.dump(mktcaps, f, indent=2)
 
     # exclude stocks in regulated utilities (SIC 4900-4999), financial (SIC 6000-6999),

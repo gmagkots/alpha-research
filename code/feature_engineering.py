@@ -133,7 +133,7 @@ def main():
     # compile_signals()
     normalize_signals()
 
-    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_signals_554.parquet'),
+    # df = pd.read_parquet(os.path.join(DATA_DIR, 'stock_signals_554.parquet'),
     #                      filters=[('ticker', 'in', ["000070.KS", "000270.KS", "001040.KS"])])
 
     # stop the clock
