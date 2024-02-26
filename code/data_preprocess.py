@@ -7,10 +7,7 @@ import numpy as np
 import pandas as pd
 import auxiliary_functions as aux
 from itertools import groupby
-from datetime import datetime, timedelta
-from pandas.tseries.offsets import BDay
-import yfinance as yf
-import pandas_datareader.data as web
+from datetime import timedelta
 
 pd.set_option('display.width', 500)
 pd.set_option('display.max_columns', 100)
@@ -20,17 +17,44 @@ DATA_DIR = 'C:\\IBKR TWS API\\my_data\\wrds\\data'
 OUT_DIR = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0]) or '.'), '../data')
 
 
-def ff_risk_free_rate():
+def local_to_usd_prices():
     """
-    Downloads and saves the daily risk-free rate from Fama-French library.
-    """
-    # set the start/end dates and output file name
-    start, end = '2000-01-01', (datetime.today() - BDay()).strftime('%Y-%m-%d')
-    filename = os.path.join(OUT_DIR, 'external', 'ff_rf.csv')
+    Convert non-USD stock prices to USD values.
 
-    # download and save the data
-    ffdict = web.DataReader('F-F_Research_Data_Factors_daily', 'famafrench', start=start, end=end)
-    ffdict[0].rename(columns={'RF': 'rf'})['rf'].to_csv(filename, index_label = 'date')
+    :return: None
+    """
+    # read exchange rate series
+    fx = pd.read_csv(os.path.join(OUT_DIR, 'fx_rates.csv'))
+    fx['date'] = pd.to_datetime(fx['date'])
+
+    # read prices and merge with fx rate series and
+    df = pd.read_parquet(os.path.join(OUT_DIR, 'data_raw_prices.parquet'))
+    df = pd.merge(df, fx, on='date')
+
+    # read currency code from fundamentals and merge to price series
+    # and create the ticker/currency mapping dictionary
+    cur = pd.read_csv(os.path.join(OUT_DIR, 'data_raw_fundamental.csv'),
+                      usecols=['ticker', 'currency']).drop_duplicates()
+    cur['currency'] = cur['currency'].str.upper() + 'USD=X'
+    df = pd.merge(df, cur, on='ticker')
+
+    # correction from British pence to pounds
+    df.loc[df['currency'] == 'GBPUSD=X', 'stock_price'] *= 0.01
+
+    # convert local prices to usd by multiplying with the proper fx rate,
+    # drop the column in the local currency if no fxstr rate is found
+    for fxstr in cur['currency'].unique().tolist():
+        if fxstr == 'USDUSD=X':
+            continue
+        df['stock_price'] = np.where(df['currency'] == fxstr,
+                                     df['stock_price'] * df[fxstr],
+                                     df['stock_price'])
+
+    # save the usd prices
+    cols = fx.columns.tolist()[1:] + ['currency']
+    df = df.drop(columns=cols)
+    # df.to_csv(os.path.join(OUT_DIR, 'stock_prices_usd.csv'), index=False)
+    df.to_parquet(os.path.join(OUT_DIR, 'stock_prices_usd.parquet'), index=False)
 
 
 def count_consecutive_values(s, op='==', x=np.nan):
@@ -91,74 +115,39 @@ def filter_raw_prices():
         e) remove stocks with stale prices (zero return) for 10 consecutive days or more,
         f) remove outlier returns.
     """
-    # loop over databases
-    prcs, rets = pd.DataFrame(), pd.DataFrame()
-    for base in ['namr', 'global']:
-        # load the price data (in USD across all stocks)
-        print('Filtering {} data'.format(base))
-        df = pd.read_parquet(os.path.join(DATA_DIR, 'compustat_{}_prices_usd.parquet'.format(base)))
+    # load the price data
+    print('Filtering the stock price data')
+    df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_prices_usd.parquet'))
 
-        # remove stocks with at least one non-positive price value
-        df = df.set_index('Date')
-        _, bad_tickers = np.where(df <= 0)
-        df = df.drop(columns=df.columns[bad_tickers].unique()).reset_index()
+    # remove stocks with at least one non-positive price value
+    bad_tickers = df.loc[df['stock_price'] < 0, 'ticker'].unique()
+    df = df[~df['ticker'].isin(bad_tickers)]
 
-        # remove stocks with insufficient history (less than 756 business days)
-        bad_stocks = df.columns[df.apply(lambda x: x.count() < 756)].tolist()
-        df = df.drop(columns=bad_stocks)
+    # remove stocks with insufficient history (less than 756 business days)
+    df = df.groupby('ticker').filter(lambda x: len(x) >= 756)
 
-        # remove stocks with 10 or more consecutive missing prices
-        max_consec = df.apply(count_consecutive_values, args=('==', np.nan))
-        bad_stocks = max_consec[max_consec >= 10].index.tolist()
-        df = df.drop(columns=bad_stocks)
+    # remove stocks with 10 or more consecutive missing prices
+    max_consec = df.groupby('ticker')['stock_price'].apply(count_consecutive_values, ('==', np.nan))
+    bad_stocks = max_consec[max_consec >= 10].index.tolist()
+    df = df.drop(columns=bad_stocks)
 
-        # remove penny stocks but restore those with most recent price above $50
-        # (penny stock criterion might be too strict, it removes established firms
-        # in tech industry because of multiple stock splits since 2000)
-        dft = df.drop(columns=['Date'])
-        penny_freq = dft.apply(lambda prc: (prc < 10).sum() / prc.count())
-        valid_stocks = penny_freq[penny_freq <= 0.2].index.tolist()
-        last_prc = dft.iloc[-1, :]
-        last_prc = last_prc[last_prc >= 50]
-        valid_stocks = sorted(list(set(valid_stocks + last_prc.index.tolist())))
-        df = df[['Date'] + valid_stocks]
+    # construct the daily stock returns and remove their outliers, this
+    # can mitigate signal bias on microcaps that are more volatile
+    df['stock_return'] = df.groupby('ticker')['stock_price'].pct_change(fill_method=None)
+    df['stock_return'] = df.groupby('ticker')['stock_return']\
+        .apply(aux.remove_outliers, ('winsorize'))\
+        .reset_index(drop=True)
 
-        # construct the daily stock returns and remove their outliers, this may
-        # help mitigating signal bias on microcaps that are more volatile
-        dfr = df.set_index('Date').pct_change().apply(aux.remove_outliers, action='winsorize').reset_index()
+    # remove stocks with stale prices (zero returns) for 10 consecutive days or more
+    max_consec = df.groupby('ticker')['stock_price'].apply(count_consecutive_values, ('==', 0))
+    bad_stocks = max_consec[max_consec >= 10].index.tolist()
+    df = df.drop(columns=bad_stocks)
 
-        # remove stocks with stale prices (zero returns) for 10 consecutive days or more
-        max_consec = dfr.apply(count_consecutive_values, args=('==', 0))
-        bad_stocks = max_consec[max_consec >= 10].index.tolist()
-        df = df.drop(columns=bad_stocks)
-        dfr = dfr.drop(columns=bad_stocks)
-
-        # return summary statistics
-        percentiles = [0.01, 0.05, 0.2, 0.5, 0.8, 0.95, 0.99]
-        summ = dfr.drop(columns=['Date']).describe(percentiles=percentiles).T.drop(columns=['count'])
-        summ.to_csv(os.path.join(OUT_DIR, 'summary stat', '{}_summ_returns_usd.csv'.format(base)),
-                    index_label='ticker')
-        print(summ[['min', 'max']].describe(percentiles=percentiles))
-
-        # convert the price and return data from wide to long format and concatenate
-        dfp = pd.melt(df, id_vars='Date', var_name='ticker', value_name='price')
-        dfr = pd.melt(dfr, id_vars='Date', var_name='ticker', value_name='return')
-        dfp['database'], dfr['database'] = base, base
-        dfp = dfp[['ticker', 'database', 'Date', 'price']].rename(columns={'Date': 'date'})
-        dfr = dfr[['ticker', 'database', 'Date', 'return']].rename(columns={'Date': 'date'})
-        prcs = pd.concat([prcs, dfp])
-        rets = pd.concat([rets, dfr])
-
-        # # save the output prices and returns
-        # rcols = ['ticker', 'date', 'return']
-        # print('Saving daily prices and returns for database {}'.format(base))
-        # df.to_parquet(os.path.join(DATA_DIR, '{}_daily_prices_usd.parquet'.format(base)))
-        # dfr[rcols].to_parquet(os.path.join(DATA_DIR, '{}_daily_returns.parquet'.format(base)))
-
-    # save the concatenated returns
-    print('Saving the concatenated daily price and return files')
-    prcs.to_parquet(os.path.join(OUT_DIR, 'stock_daily_prices_usd.parquet'))
-    rets.to_parquet(os.path.join(OUT_DIR, 'stock_daily_returns.parquet'))
+    # save the  returns
+    print('Saving the daily return data')
+    df = df.drop(columns=['stock_price'])
+    # df.to_csv(os.path.join(OUT_DIR, 'stock_daily_returns.csv'), index=False)
+    df.to_parquet(os.path.join(OUT_DIR, 'stock_daily_returns.parquet'), index=False)
 
 
 def local_to_usd(df, currency='curcd', exclude=None):
@@ -176,8 +165,8 @@ def local_to_usd(df, currency='curcd', exclude=None):
     cols = [col for col in df.select_dtypes(include=['float64']).columns if col not in exclude]
 
     # read the fx rate series
-    fx = pd.read_csv(os.path.join(DATA_DIR, 'fx_rates.csv')).rename(columns={'Date': 'datadate'})
-    fx['datadate'] = pd.to_datetime(fx['datadate'])
+    fx = pd.read_csv(os.path.join(OUT_DIR, 'fx_rates.csv'))
+    fx['date'] = pd.to_datetime(fx['date'])
     valid_currs = [curr[0:3] for curr in fx.columns[1:]]
 
     # merge the fx rates, restrict to valid currencies,
@@ -499,12 +488,12 @@ def main():
     start_time = time.time()
 
     # run functions
-    # ff_risk_free_rate()
-    # filter_raw_prices()
+    local_to_usd_prices()
+    filter_raw_prices()
     # get_fundamentals()
     # merge_funda_fundq()
     # filter_industries()
-    stock_market_cap()
+    # stock_market_cap()
 
     # stop the clock
     elapsed = time.time() - start_time

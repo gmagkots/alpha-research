@@ -218,17 +218,22 @@ def main():
     idcols = ['ticker', 'database', 'date', 'return']
     scols = ['bps', 'eps', 'roe_hou_orgknow_ebit']
     cols = idcols + scols
-    with open(os.path.join(OUT_DIR, 'tickers_554.json'), 'r') as f:
-        tickers = json.load(f)
+    df = pd.read_json(os.path.join(OUT_DIR, 'tickers_mkt_cap_2000.json'))
+    tickers = df['ticker'].tolist()[0:3]
+    df.iloc[0:100].to_csv(os.path.join(OUT_DIR, 'tickers_industry.csv'), index=False)
+
+    # for ticker in tickers:
+    #     ticker_object = yf.Ticker(ticker)
+    print(df.head())
+    print(tickers)
+
+    # with open(os.path.join(OUT_DIR, 'tickers_mkt_cap_2000.json'), 'r') as f:
+    #     tickers = json.load(f)
     # tickers = tickers[0:50]
-    df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_daily_fundamentals.parquet'), filters=[('ticker', 'in', tickers)])
-    # df = df.loc[df['date'].between(pd.to_datetime('2023-05-26'), pd.to_datetime('2023-05-31')), cols]
-    df = df.loc[df['date'] == pd.to_datetime('2023-05-31'), cols]
+    # df = pd.read_parquet(os.path.join(OUT_DIR, 'stock_daily_fundamentals.parquet'), filters=[('ticker', 'in', tickers)])
+    # # df = df.loc[df['date'].between(pd.to_datetime('2023-05-26'), pd.to_datetime('2023-05-31')), cols]
+    # df = df.loc[df['date'] == pd.to_datetime('2023-05-31'), cols]
 
-
-
-    print(df.tail())
-    print(df[scols].describe())
 
     # stop the clock
     elapsed = time.time() - start_time
